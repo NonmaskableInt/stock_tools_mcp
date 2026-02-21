@@ -791,14 +791,14 @@ class StockToolsMCPServer:
 
 def main():
     """Main entry point for the Stock Tools MCP server."""
-    import sys
+    mcp_transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
 
-    transport = "stdio"
-
-    if "--sse" in sys.argv or os.getenv("MCP_TRANSPORT") == "sse":
-        transport = "sse"
-    elif "--streamable" in sys.argv or os.getenv("MCP_TRANSPORT") == "streamable":
+    if mcp_transport in ("streamable-http", "streamable"):
         transport = "streamable-http"
+    elif mcp_transport == "sse":
+        transport = "sse"
+    else:
+        transport = "stdio"
 
     logger.info(f"Starting Stock Tools MCP server with transport={transport}")
     server = StockToolsMCPServer()
