@@ -15,11 +15,13 @@ from shared.types import MCPResponse
 DEBUG_MODE = os.getenv("STOCK_TOOLS_DEBUG", "false").lower() == "true"
 LOG_LEVEL = os.getenv("STOCK_TOOLS_LOG_LEVEL", "INFO").upper()
 
+
 # Financial constants (configurable via environment)
 RISK_FREE_RATE = float(os.getenv("STOCK_TOOLS_RISK_FREE_RATE", "0.02"))
 TRADING_DAYS_PER_YEAR = int(os.getenv("STOCK_TOOLS_TRADING_DAYS", "252"))
 MAX_DATA_POINTS_FOR_LLM = int(os.getenv("STOCK_TOOLS_MAX_DATA_POINTS", "50"))
 SERVER_PORT = int(os.getenv("STOCK_TOOLS_PORT", "8003"))
+SERVER_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 
 # Configure logging
 logging.basicConfig(
@@ -115,6 +117,7 @@ class StockToolsMCPServer:
             debug=DEBUG_MODE,
             json_response=True,
             port=SERVER_PORT,
+            host=SERVER_HOST,
             log_level=LOG_LEVEL,
         )
         logger.info(f"Initializing Stock Tools MCP Server (debug={DEBUG_MODE})")
