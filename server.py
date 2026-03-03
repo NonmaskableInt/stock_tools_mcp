@@ -2,11 +2,13 @@
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+import pandas_market_calendars as mcal
+import pytz
 from mcp.server.fastmcp import FastMCP
 
 from shared.types import MCPResponse
@@ -717,6 +719,94 @@ class StockToolsMCPServer:
                 return MCPResponse(success=True, data=results)
             except Exception as e:
                 logger.exception("Error in calculate_moving_averages")
+                return MCPResponse(success=False, error=str(e))
+
+        @self.app.tool()
+        async def check_market_status(exchange: str = "NYSE") -> MCPResponse:
+            """Check whether a stock exchange is currently open or closed.
+
+            Args:
+                exchange: Exchange name to check (e.g. 'NYSE', 'NASDAQ', 'CME_Equity').
+                    Defaults to 'NYSE'.
+            """
+            try:
+                valid_exchanges = mcal.get_calendar_names()
+                if exchange not in valid_exchanges:
+                    return MCPResponse(
+                        success=False,
+                        error=f"Unknown exchange '{exchange}'. Valid options include: NYSE, NASDAQ, CME_Equity, and others.",
+                    )
+
+                calendar = mcal.get_calendar(exchange)
+                et_tz = pytz.timezone("America/New_York")
+                utc_tz = pytz.utc
+
+                now_utc = datetime.now(utc_tz)
+                now_et = now_utc.astimezone(et_tz)
+                today = now_et.date()
+
+                # Check today's schedule
+                today_schedule = calendar.schedule(
+                    start_date=str(today), end_date=str(today)
+                )
+
+                is_trading_day = not today_schedule.empty
+                is_open = False
+                market_open_et = None
+                market_close_et = None
+                session_state = "closed"
+                reason_closed = None
+
+                if is_trading_day:
+                    open_utc = today_schedule.iloc[0]["market_open"].to_pydatetime()
+                    close_utc = today_schedule.iloc[0]["market_close"].to_pydatetime()
+                    market_open_et = open_utc.astimezone(et_tz).strftime("%H:%M %Z")
+                    market_close_et = close_utc.astimezone(et_tz).strftime("%H:%M %Z")
+
+                    if now_utc < open_utc:
+                        session_state = "pre_market"
+                        reason_closed = "pre_market"
+                    elif now_utc <= close_utc:
+                        is_open = True
+                        session_state = "open"
+                    else:
+                        session_state = "after_hours"
+                        reason_closed = "after_hours"
+                else:
+                    weekday = today.weekday()  # 0=Mon … 6=Sun
+                    reason_closed = "weekend" if weekday >= 5 else "holiday"
+
+                # Find next open session (look ahead up to 14 days)
+                next_open_et = None
+                look_start = today if not is_open else today + timedelta(days=1)
+                future = calendar.schedule(
+                    start_date=str(look_start),
+                    end_date=str(today + timedelta(days=14)),
+                )
+                if not future.empty:
+                    for idx_date, row in future.iterrows():
+                        session_open_utc = row["market_open"].to_pydatetime()
+                        if session_open_utc > now_utc:
+                            next_open_et = session_open_utc.astimezone(et_tz).strftime(
+                                "%Y-%m-%d %H:%M %Z"
+                            )
+                            break
+
+                results = {
+                    "exchange": exchange,
+                    "is_open": is_open,
+                    "session_state": session_state,
+                    "reason_closed": reason_closed,
+                    "current_time_et": now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    "is_trading_day": is_trading_day,
+                    "market_open_et": market_open_et,
+                    "market_close_et": market_close_et,
+                    "next_open_et": next_open_et,
+                }
+
+                return MCPResponse(success=True, data=results)
+            except Exception as e:
+                logger.exception("Error in check_market_status")
                 return MCPResponse(success=False, error=str(e))
 
         @self.app.tool()

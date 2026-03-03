@@ -2,6 +2,9 @@
 
 import pytest
 from datetime import datetime
+from unittest.mock import patch, MagicMock
+import pandas as pd
+import pytz
 
 
 class TestCalculateReturns:
@@ -532,4 +535,145 @@ class TestMCPResponseFormat:
         result = await tool.fn(prices=sample_prices)
 
         assert result.timestamp is not None
+
+
+class TestCheckMarketStatus:
+    """Tests for check_market_status tool."""
+
+    @pytest.mark.asyncio
+    async def test_default_exchange_nyse(self, server):
+        """Test that the default exchange is NYSE and response has required fields."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["exchange"] == "NYSE"
+        assert "is_open" in result.data
+        assert "session_state" in result.data
+        assert "current_time_et" in result.data
+        assert "is_trading_day" in result.data
+
+    @pytest.mark.asyncio
+    async def test_nasdaq_exchange(self, server):
+        """Test NASDAQ exchange check returns valid response."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        result = await tool.fn(exchange="NASDAQ")
+
+        assert result.success is True
+        assert result.data["exchange"] == "NASDAQ"
+
+    @pytest.mark.asyncio
+    async def test_invalid_exchange(self, server):
+        """Test that an unknown exchange returns an error."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        result = await tool.fn(exchange="FAKEEXCHANGE")
+
+        assert result.success is False
+        assert "Unknown exchange" in result.error
+
+    @pytest.mark.asyncio
+    async def test_market_open_during_hours(self, server):
+        """Test market shows open when time is within trading hours."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        et = pytz.timezone("America/New_York")
+        # Tuesday 2026-03-03 at 11:00 AM ET — known trading day, market open
+        mock_now = et.localize(datetime(2026, 3, 3, 11, 0, 0))
+
+        with patch("server.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["is_open"] is True
+        assert result.data["session_state"] == "open"
+        assert result.data["reason_closed"] is None
+
+    @pytest.mark.asyncio
+    async def test_market_closed_pre_market(self, server):
+        """Test market shows pre_market before trading hours."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        et = pytz.timezone("America/New_York")
+        # Tuesday 2026-03-03 at 7:00 AM ET — before open
+        mock_now = et.localize(datetime(2026, 3, 3, 7, 0, 0))
+
+        with patch("server.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["is_open"] is False
+        assert result.data["session_state"] == "pre_market"
+        assert result.data["reason_closed"] == "pre_market"
+
+    @pytest.mark.asyncio
+    async def test_market_closed_after_hours(self, server):
+        """Test market shows after_hours when past close."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        et = pytz.timezone("America/New_York")
+        # Tuesday 2026-03-03 at 6:00 PM ET — after close
+        mock_now = et.localize(datetime(2026, 3, 3, 18, 0, 0))
+
+        with patch("server.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["is_open"] is False
+        assert result.data["session_state"] == "after_hours"
+        assert result.data["reason_closed"] == "after_hours"
+
+    @pytest.mark.asyncio
+    async def test_market_closed_weekend(self, server):
+        """Test market shows closed with weekend reason on Saturday."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        et = pytz.timezone("America/New_York")
+        # Saturday 2026-03-07 at noon ET
+        mock_now = et.localize(datetime(2026, 3, 7, 12, 0, 0))
+
+        with patch("server.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["is_open"] is False
+        assert result.data["is_trading_day"] is False
+        assert result.data["reason_closed"] == "weekend"
+
+    @pytest.mark.asyncio
+    async def test_market_closed_holiday(self, server):
+        """Test market shows closed with holiday reason on a known holiday."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        et = pytz.timezone("America/New_York")
+        # Good Friday 2026-04-03 — NYSE holiday (weekday=Friday)
+        mock_now = et.localize(datetime(2026, 4, 3, 12, 0, 0))
+
+        with patch("server.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = await tool.fn()
+
+        assert result.success is True
+        assert result.data["is_open"] is False
+        assert result.data["is_trading_day"] is False
+        assert result.data["reason_closed"] == "holiday"
+
+    @pytest.mark.asyncio
+    async def test_next_open_provided_when_closed(self, server):
+        """Test that next_open_et is provided when market is closed."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        result = await tool.fn()
+
+        assert result.success is True
+        if not result.data["is_open"]:
+            assert result.data["next_open_et"] is not None
+
+    @pytest.mark.asyncio
+    async def test_market_hours_present_on_trading_day(self, server):
+        """Test that market_open_et and market_close_et are present on trading days."""
+        tool = server.app._tool_manager._tools["check_market_status"]
+        result = await tool.fn()
+
+        assert result.success is True
+        if result.data["is_trading_day"]:
+            assert result.data["market_open_et"] is not None
+            assert result.data["market_close_et"] is not None
         assert isinstance(result.timestamp, datetime)
