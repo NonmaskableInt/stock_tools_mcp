@@ -550,7 +550,8 @@ class TestCheckMarketStatus:
         assert result.data["exchange"] == "NYSE"
         assert "is_open" in result.data
         assert "session_state" in result.data
-        assert "current_time_et" in result.data
+        assert "current_time_local" in result.data
+        assert "timezone" in result.data
         assert "is_trading_day" in result.data
 
     @pytest.mark.asyncio
@@ -664,7 +665,7 @@ class TestCheckMarketStatus:
 
         assert result.success is True
         if not result.data["is_open"]:
-            assert result.data["next_open_et"] is not None
+            assert result.data["next_open_local"] is not None
 
     @pytest.mark.asyncio
     async def test_market_hours_present_on_trading_day(self, server):
@@ -674,6 +675,6 @@ class TestCheckMarketStatus:
 
         assert result.success is True
         if result.data["is_trading_day"]:
-            assert result.data["market_open_et"] is not None
-            assert result.data["market_close_et"] is not None
+            assert result.data["market_open_local"] is not None
+            assert result.data["market_close_local"] is not None
         assert isinstance(result.timestamp, datetime)

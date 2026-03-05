@@ -738,12 +738,13 @@ class StockToolsMCPServer:
                     )
 
                 calendar = mcal.get_calendar(exchange)
-                et_tz = pytz.timezone("America/New_York")
+                local_tz = calendar.tz  # ZoneInfo object for this exchange
+                tz_name = getattr(local_tz, "key", str(local_tz))
                 utc_tz = pytz.utc
 
                 now_utc = datetime.now(utc_tz)
-                now_et = now_utc.astimezone(et_tz)
-                today = now_et.date()
+                now_local = now_utc.astimezone(local_tz)
+                today = now_local.date()
 
                 # Check today's schedule
                 today_schedule = calendar.schedule(
@@ -752,16 +753,16 @@ class StockToolsMCPServer:
 
                 is_trading_day = not today_schedule.empty
                 is_open = False
-                market_open_et = None
-                market_close_et = None
+                market_open_local = None
+                market_close_local = None
                 session_state = "closed"
                 reason_closed = None
 
                 if is_trading_day:
                     open_utc = today_schedule.iloc[0]["market_open"].to_pydatetime()
                     close_utc = today_schedule.iloc[0]["market_close"].to_pydatetime()
-                    market_open_et = open_utc.astimezone(et_tz).strftime("%H:%M %Z")
-                    market_close_et = close_utc.astimezone(et_tz).strftime("%H:%M %Z")
+                    market_open_local = open_utc.astimezone(local_tz).strftime("%H:%M %Z")
+                    market_close_local = close_utc.astimezone(local_tz).strftime("%H:%M %Z")
 
                     if now_utc < open_utc:
                         session_state = "pre_market"
@@ -777,7 +778,7 @@ class StockToolsMCPServer:
                     reason_closed = "weekend" if weekday >= 5 else "holiday"
 
                 # Find next open session (look ahead up to 14 days)
-                next_open_et = None
+                next_open_local = None
                 look_start = today if not is_open else today + timedelta(days=1)
                 future = calendar.schedule(
                     start_date=str(look_start),
@@ -787,21 +788,22 @@ class StockToolsMCPServer:
                     for idx_date, row in future.iterrows():
                         session_open_utc = row["market_open"].to_pydatetime()
                         if session_open_utc > now_utc:
-                            next_open_et = session_open_utc.astimezone(et_tz).strftime(
+                            next_open_local = session_open_utc.astimezone(local_tz).strftime(
                                 "%Y-%m-%d %H:%M %Z"
                             )
                             break
 
                 results = {
                     "exchange": exchange,
+                    "timezone": tz_name,
                     "is_open": is_open,
                     "session_state": session_state,
                     "reason_closed": reason_closed,
-                    "current_time_et": now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    "current_time_local": now_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
                     "is_trading_day": is_trading_day,
-                    "market_open_et": market_open_et,
-                    "market_close_et": market_close_et,
-                    "next_open_et": next_open_et,
+                    "market_open_local": market_open_local,
+                    "market_close_local": market_close_local,
+                    "next_open_local": next_open_local,
                 }
 
                 return MCPResponse(success=True, data=results)
