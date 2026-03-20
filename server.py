@@ -799,7 +799,7 @@ class StockToolsMCPServer:
                     "is_open": is_open,
                     "session_state": session_state,
                     "reason_closed": reason_closed,
-                    "current_time_local": now_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    "current_time_exchange": now_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
                     "is_trading_day": is_trading_day,
                     "market_open_local": market_open_local,
                     "market_close_local": market_close_local,
