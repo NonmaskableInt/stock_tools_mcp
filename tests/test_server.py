@@ -550,7 +550,7 @@ class TestCheckMarketStatus:
         assert result.data["exchange"] == "NYSE"
         assert "is_open" in result.data
         assert "session_state" in result.data
-        assert "current_time_local" in result.data
+        assert "current_time_exchange" in result.data
         assert "timezone" in result.data
         assert "is_trading_day" in result.data
 
